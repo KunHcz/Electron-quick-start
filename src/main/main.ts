@@ -9,7 +9,7 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import MenuBuilder from './menu';
@@ -88,7 +88,7 @@ const createWindow = async () => {
     },
   });
 
-  mainWindow.loadURL(resolveHtmlPath('index.html'));
+  mainWindow.loadURL(resolveHtmlPath(`index.html`));
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {
@@ -143,38 +143,57 @@ app
   })
   .catch(console.log);
 
-autoUpdater.on('checking-for-update', () => {
-  sendStatusToWindow('Checking for update...');
-});
-
-autoUpdater.on('update-available', () => {
-  sendStatusToWindow('Update available.');
-});
-
-autoUpdater.on('update-not-available', () => {
-  sendStatusToWindow('Update not available.');
-});
-
-autoUpdater.on('error', (err) => {
-  sendStatusToWindow(`Error in auto-updater: ${err}`);
-});
-
-autoUpdater.on('download-progress', (progressObj) => {
-  const logMessage = `
-    Download speed: ${progressObj.bytesPerSecond} -
-    Downloaded ${progressObj.percent}%
-    (${progressObj.transferred}/${progressObj.total})
-  `;
-  sendStatusToWindow(logMessage.trim());
-});
-
-autoUpdater.on('update-downloaded', () => {
-  sendStatusToWindow('Update downloaded');
-});
-
-app.on('ready', function () {
+function checkUpdate() {
+  //检测更新
   autoUpdater.checkForUpdatesAndNotify();
-  setTimeout(() => {
-    sendStatusToWindow('App ready');
-  }, 1000);
+
+  //监听'error'事件
+  autoUpdater.on('error', (err) => {
+    console.log(err);
+  });
+
+  //监听'update-available'事件，发现有新版本时触发
+  autoUpdater.on('update-available', () => {
+    console.log('found new version');
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: '没有新版本',
+      message: '当前已经是最新版本',
+    });
+  });
+
+  //默认会自动下载新版本
+
+  //监听'update-downloaded'事件，新版本下载完成时触发
+  autoUpdater.on('update-downloaded', () => {
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: '应用更新',
+        message: '发现新版本，是否更新？',
+        buttons: ['是', '否'],
+      })
+      .then((buttonIndex) => {
+        if (buttonIndex.response == 0) {
+          //选择是，则退出程序，安装新版本
+          autoUpdater.quitAndInstall();
+          app.quit();
+        }
+      });
+  });
+}
+ipcMain.on('check-for-updates', (event) => {
+  console.log('Checking for updates...');
+  checkUpdate();
+});
+
+ipcMain.on('toggle-auto-launch', (event) => {
+  console.log('Toggling auto-launch...');
+});
+
+ipcMain.on('get-version', (event) => {
+  event.reply('version', app.getVersion());
 });
